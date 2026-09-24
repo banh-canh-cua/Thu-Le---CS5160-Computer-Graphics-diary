@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Project 1: Computer Graphics</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050510;
+            color: #fff;
+            font-family: Arial, sans-serif;
+        }
+
+        #info {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            padding: 12px 14px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            font-size: 10px;
+            line-height: 1.5;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="info">
+        <b>Project 1: Pinhole camera, rasterized display</b><br>
+        Thu Le<br>
+        <b>W / A / S / D:</b> Move Camera<br>
+        <b>Click Sun/Moon:</b> Toggle Day / Night<br>
+        <b>1 / 2 / 3:</b> Switch Render Level<br>
+        <b>R:</b> Reset Camera Scene<br>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+        // =========================================================================
+        // GLOBAL STATE + PIXEL GRID SETUP
+        // =========================================================================
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let renderLevel = 1; // 1 = canvas lines, 2 = custom lines, 3 = filled triangles
+        let isNight = false;
+
+        const INITIAL_CAMERA = { x: 0, y: 4, z: -20 };
+        let camera = { ...INITIAL_CAMERA };
+
+        const rows = 200;
+        const cols = 320;
+        const pixelGrid = Array.from({ length: cols }, () => Array(rows).fill("#0b132b"));
+        const zDepth = Array.from({ length: cols }, () => Array(rows).fill(Infinity));
+
+        // Shooting star
+        let shootingStar = null;
+        let starTrail = [];
+
+        // =========================================================================
+        // BASE MODELS (centered at origin 0,0,0)
+        // =========================================================================
+        const BASE_MOUNTAIN = {
+            vertices: [
+                { x: 0.0, y: 1.0, z: 0.0 }, // peak
+                { x: -0.5, y: -0.5, z: -0.5 }, // base front-left
+                { x: 0.5, y: -0.5, z: -0.5 }, // base front-right
+                { x: 0.5, y: -0.5, z: 0.5 }, // base back-right
+                { x: -0.5, y: -0.5, z: 0.5 }  // base back-left
+            ],
+            faces: [
+                { v: [0, 1, 2], colorDay: "#57606f", colorNight: "#342448" },
+                { v: [0, 2, 3], colorDay: "#3e4451", colorNight: "#252b39" },
+                { v: [0, 3, 4], colorDay: "#2c313a", colorNight: "#1a1f2b" },
+                { v: [0, 4, 1], colorDay: "#474e5c", colorNight: "#3f2c57" }
+            ]
+        };
+
+        const BASE_CLOUD = {
+            vertices: [
+                { x: 0.0, y: 0.0, z: 0 },
+                { x: -1.0, y: -0.2, z: -0.2 },
+                { x: -0.4, y: 0.6, z: 0.3 },
+                { x: 0.6, y: 0.8, z: -0.1 },
+                { x: 1.2, y: 0.2, z: 0.4 },
+                { x: 0.8, y: -0.4, z: -0.3 }
+            ],
+            faces: [
+                { v: [0, 1, 2], colorDay: "#ffffff", colorNight: "#e86d49" },
+                { v: [0, 2, 3], colorDay: "#f5f5f5", colorNight: "#f4b757" },
+                { v: [0, 3, 4], colorDay: "#e8e8e8", colorNight: "#ce2f34" },
+                { v: [0, 4, 5], colorDay: "#dedede", colorNight: "#9e3c53" }
+            ]
+        };
+
+        const BASE_TREE = {
+            vertices: [
+                // Top
+                { x: 0.0, y: 2.0, z: 0.0 },   // tip 
+                { x: -0.38, y: 0.75, z: -0.38 }, // FL 
+                { x: 0.38, y: 0.75, z: -0.38 },  // FR 
+                { x: 0.38, y: 0.75, z: 0.38 },   // BR 
+                { x: -0.38, y: 0.75, z: 0.38 },  // BL 
+
+                // Bottom
+                { x: 0.0, y: 1.3, z: 0.0 },   // mid-tip
+                { x: -0.58, y: 0.0, z: -0.58 }, // FL 
+                { x: 0.58, y: 0.0, z: -0.58 },  // FR 
+                { x: 0.58, y: 0.0, z: 0.58 },   // BR 
+                { x: -0.58, y: 0.0, z: 0.58 },  // BL
+
+                // Trunk
+                { x: -0.11, y: 0.0, z: -0.11 }, // top FL
+                { x: 0.11, y: 0.0, z: -0.11 },  // top FR
+                { x: 0.11, y: 0.0, z: 0.11 },   // top BR 
+                { x: -0.11, y: 0.0, z: 0.11 },  // top BL 
+                { x: -0.11, y: -0.85, z: -0.11 },// bot FL 
+                { x: 0.11, y: -0.85, z: -0.11 }, // bot FR 
+                { x: 0.11, y: -0.85, z: 0.11 },  // bot BR 
+                { x: -0.11, y: -0.85, z: 0.11 }  // bot BL 
+            ],
+            faces: [
+                // Top
+                { v: [0, 1, 2], colorDay: "#d94e2a", colorNight: "#3a523e" },
+                { v: [0, 2, 3], colorDay: "#f26838", colorNight: "#46633b" },
+                { v: [0, 3, 4], colorDay: "#d94e2a", colorNight: "#3a523e" },
+                { v: [0, 4, 1], colorDay: "#ff8c5a", colorNight: "#557a4a" },
+
+                // Bottom
+                { v: [5, 6, 7], colorDay: "#a32912", colorNight: "#222f24" },
+                { v: [5, 7, 8], colorDay: "#d94e2a", colorNight: "#304232" },
+                { v: [5, 8, 9], colorDay: "#a32912", colorNight: "#222f24" },
+                { v: [5, 9, 6], colorDay: "#f26838", colorNight: "#384b2e" },
+
+                // Trunk
+                { v: [10, 11, 15], colorDay: "#2b1408", colorNight: "#17121c" },
+                { v: [10, 15, 14], colorDay: "#2b1408", colorNight: "#17121c" },
+                { v: [11, 12, 16], colorDay: "#3d1d0c", colorNight: "#231a2c" },
+                { v: [11, 16, 15], colorDay: "#3d1d0c", colorNight: "#231a2c" },
+                { v: [12, 13, 17], colorDay: "#2b1408", colorNight: "#17121c" },
+                { v: [12, 17, 16], colorDay: "#2b1408", colorNight: "#17121c" },
+                { v: [13, 10, 14], colorDay: "#522610", colorNight: "#342448" },
+                { v: [13, 14, 17], colorDay: "#522610", colorNight: "#342448" }
+            ]
+        };
+
+        const BASE_STAR = {
+            vertices: [
+                { x: 0, y: 0.3, z: 0 },
+                { x: 0, y: -0.3, z: 0 },
+                { x: 0.3, y: 0, z: 0 },
+                { x: -0.3, y: 0, z: 0 }
+            ],
+            faces: [
+                { v: [0, 2, 1], colorDay: "transparent", colorNight: "#f4b757" },
+                { v: [0, 1, 3], colorDay: "transparent", colorNight: "#f4b757" }
+            ]
+        };
+
+        function createBaseSunMoon(radius = 1.0, sides = 8) {
+            let v = [{ x: 0, y: 0, z: radius }, { x: 0, y: 0, z: -radius }]; // center back and center front
+            let f = [];
+            for (let i = 0; i < sides; i++) {
+                let angle = (i / sides) * Math.PI * 2;
+                v.push({ x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, z: 0 });
+                let nextVertex = (i === sides - 1) ? 2 : i + 3;
+                f.push({ v: [0, i + 2, nextVertex], colorDay: "#ffd700", colorNight: "#f4b757" }); // back
+                f.push({ v: [1, i + 2, nextVertex], colorDay: "#ffd700", colorNight: "#e86d49" }); // front
+            }
+            return { vertices: v, faces: f };
+        }
+        const BASE_SUNMOON = createBaseSunMoon(1.0, 8);
+
+        // =========================================================================
+        // INSTANCES ON CANVAS
+        // =========================================================================
+        const instances = [
+            { model: BASE_MOUNTAIN, pos: { x: -25, y: 2, z: 50 }, scale: 24 },
+            { model: BASE_MOUNTAIN, pos: { x: 5, y: 4, z: 55 }, scale: 28 },
+            { model: BASE_MOUNTAIN, pos: { x: 30, y: 1, z: 48 }, scale: 20 },
+
+            // Mountains closer
+            { model: BASE_MOUNTAIN, pos: { x: -14, y: 3, z: 32 }, scale: 18 },
+            { model: BASE_MOUNTAIN, pos: { x: 12, y: 5, z: 38 }, scale: 22 },
+
+            { model: BASE_TREE, pos: { x: -10, y: -2, z: 22 }, scale: 4.5 },
+            { model: BASE_TREE, pos: { x: -6, y: -1.5, z: 20 }, scale: 5.5 },
+            { model: BASE_TREE, pos: { x: -2, y: -2, z: 19 }, scale: 5 },
+            { model: BASE_TREE, pos: { x: 4, y: -1.8, z: 21 }, scale: 6 },
+            { model: BASE_TREE, pos: { x: 9, y: -2.2, z: 24 }, scale: 4.8 },
+            { model: BASE_TREE, pos: { x: 13, y: -1.5, z: 22 }, scale: 5.2 },
+
+            { model: BASE_TREE, pos: { x: -20, y: -5.2, z: 22 }, scale: 4.2 },
+            { model: BASE_TREE, pos: { x: -15, y: -4.8, z: 18 }, scale: 4.8 },
+            { model: BASE_TREE, pos: { x: -9, y: -5.0, z: 16 }, scale: 3.8 },
+            { model: BASE_TREE, pos: { x: -3, y: -5.3, z: 20 }, scale: 5.0 },
+            { model: BASE_TREE, pos: { x: 3, y: -5.1, z: 18 }, scale: 4.3 },
+            { model: BASE_TREE, pos: { x: 9, y: -5.4, z: 21 }, scale: 4.9 },
+            { model: BASE_TREE, pos: { x: 15, y: -4.9, z: 17 }, scale: 4.0 },
+            { model: BASE_TREE, pos: { x: 20, y: -5.2, z: 23 }, scale: 4.6 },
+
+            { model: BASE_CLOUD, pos: { x: -18, y: 18, z: 35 }, scale: 4 },
+            { model: BASE_CLOUD, pos: { x: -8, y: 15, z: 28 }, scale: 5 },
+            { model: BASE_CLOUD, pos: { x: 6, y: 20, z: 42 }, scale: 6 },
+            { model: BASE_CLOUD, pos: { x: 16, y: 16, z: 33 }, scale: 4.5 },
+            { model: BASE_CLOUD, pos: { x: 0, y: 17, z: 30 }, scale: 3.5 },
+
+            { model: BASE_STAR, pos: { x: -17, y: 30, z: 45 }, scale: 1.5 },
+            { model: BASE_STAR, pos: { x: -8, y: 15, z: 50 }, scale: 1.2 },
+            { model: BASE_STAR, pos: { x: 8, y: 26, z: 45 }, scale: 1.8 },
+            { model: BASE_STAR, pos: { x: 28, y: 22, z: 48 }, scale: 1.4 },
+            { model: BASE_STAR, pos: { x: -4, y: 28, z: 52 }, scale: 1.6 },
+            { model: BASE_STAR, pos: { x: 30, y: 30, z: 55 }, scale: 1.3 },
+
+            { model: BASE_SUNMOON, pos: { x: -10, y: 16, z: 28 }, scale: 3.5 }
+        ];
+
+        // =========================================================================
+        // PROJECTION
+        // =========================================================================
+        function projectVertex(baseVertex, obj) {
+            let canvasX = (baseVertex.x * obj.scale) + obj.pos.x;
+            let canvasY = (baseVertex.y * obj.scale) + obj.pos.y;
+            let canvasZ = (baseVertex.z * obj.scale) + obj.pos.z;
+
+            let camX = canvasX - camera.x;
+            let camY = canvasY - camera.y;
+            let camZ = canvasZ - camera.z;
+
+            if (camZ < 0.5) return null; // culling
+
+            let u = camX / camZ;
+            let v = camY / camZ;
+
+            let projectU = Math.round(u * cols + cols / 2);
+            let projectV = Math.round(rows - (v * rows + rows / 2));
+
+            return { u: projectU, v: projectV, z: camZ };
+        }
+
+        // =========================================================================
+        // DRAW
+        // =========================================================================
+        function draw() {
+            let skyColor = isNight ? "#0b132b" : "#87ceeb";
+            ctx.fillStyle = skyColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let horizon = Math.round(rows * 0.70);
+            let groundColor = isNight ? "#0e141a" : "#2d4a3e";
+
+            for (let i = 0; i < cols; i++) {
+                for (let r = 0; r < horizon; r++) {
+                    pixelGrid[i][r] = skyColor;
+                }
+                for (let r = horizon; r < rows; r++) {
+                    pixelGrid[i][r] = groundColor;
+                }
+                zDepth[i].fill(Infinity);
+            }
+
+            let uScale = canvas.width / cols;
+            let vScale = canvas.height / rows;
+
+            for (const obj of instances) {
+                for (const f of obj.model.faces) {
+                    let v1 = projectVertex(obj.model.vertices[f.v[0]], obj)
+                    let v2 = projectVertex(obj.model.vertices[f.v[1]], obj)
+                    let v3 = projectVertex(obj.model.vertices[f.v[2]], obj)
+                    let color = isNight ? f.colorNight : f.colorDay
+
+                    if (!v3 || !v1 || !v2) continue; // skip if culled
+
+                    if (renderLevel == 1) {
+                        drawLine(v1.u * uScale, v1.v * vScale, v2.u * uScale, v2.v * vScale, color)
+                        drawLine(v1.u * uScale, v1.v * vScale, v3.u * uScale, v3.v * vScale, color)
+                        drawLine(v3.u * uScale, v3.v * vScale, v2.u * uScale, v2.v * vScale, color)
+                    }
+                    else if (renderLevel == 2) {
+                        makePixelatedLine(v1, v2, color);
+                        makePixelatedLine(v1, v3, color);
+                        makePixelatedLine(v3, v2, color);
+                    }
+                    else if (renderLevel == 3) {
+                        fillTriangle(v1, v2, v3, color);
+                    }
+                }
+            }
+
+            if (renderLevel >= 2) colorThePixels();
+        }
+
+        function drawLine(u1, v1, u2, v2, lineColor) {
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = lineColor;
+            ctx.beginPath();
+            ctx.moveTo(u1, v1);
+            ctx.lineTo(u2, v2);
+            ctx.stroke();
+        }
+
+        function colorThePixels() {
+            let pixelW = canvas.width / cols;
+            let pixelH = canvas.height / rows;
+
+            for (let v = 0; v < rows; v++) {
+                for (let u = 0; u < cols; u++) {
+                    ctx.fillStyle = pixelGrid[u][v];
+                    ctx.fillRect(u * pixelW, v * pixelH, Math.ceil(pixelW), Math.ceil(pixelH));
+                }
+            }
+        }
+
+        function setPixelColor(u, v, z, color) {
+            if (u >= 0 && u < cols && v >= 0 && v < rows) {
+                if (z < zDepth[u][v]) {
+                    zDepth[u][v] = z;
+                    pixelGrid[u][v] = color;
+                }
+            }
+        }
+
+        function makePixelatedLine(p1, p2, color) {
+            let du = p2.u - p1.u;
+            let dv = p2.v - p1.v;
+            let steps = Math.max(Math.abs(du), Math.abs(dv));
+
+            if (steps == 0) { // identical points
+                if (p1.u >= 0 && p1.u < cols && p1.v >= 0 && p1.v < rows) {
+                    setPixelColor(p1.u, p1.v, p1.z, color);
+                }
+                return;
+            }
+
+            let uStep = du / steps;
+            let vStep = dv / steps;
+            let zStep = (p2.z - p1.z) / steps;
+
+            let u = p1.u;
+            let v = p1.v;
+            let z = p1.z;
+
+            for (let i = 0; i <= steps; i++) {
+                setPixelColor(Math.round(u), Math.round(v), z, color);
+                u += uStep;
+                v += vStep;
+                z += zStep;
+            }
+        }
+
+        function computeBarycentric(u, v, p0, p1, p2) {
+            let area = (p1.v - p2.v) * (p0.u - p2.u) + (p2.u - p1.u) * (p0.v - p2.v); // signed area of triangle
+            if (Math.abs(area) < 0.0001) return { alpha: -1, beta: -1, gamma: -1 };
+
+            let alpha = ((p1.v - p2.v) * (u - p2.u) + (p2.u - p1.u) * (v - p2.v)) / area;
+            let beta = ((p2.v - p0.v) * (u - p2.u) + (p0.u - p2.u) * (v - p2.v)) / area;
+            let gamma = 1.0 - alpha - beta;
+
+            return { alpha, beta, gamma };
+        }
+
+        function fillTriangle(p0, p1, p2, color) {
+            let minU = Math.max(0, Math.min(p0.u, p1.u, p2.u));
+            let maxU = Math.min(cols - 1, Math.max(p0.u, p1.u, p2.u));
+            let minV = Math.max(0, Math.min(p0.v, p1.v, p2.v));
+            let maxV = Math.min(rows - 1, Math.max(p0.v, p1.v, p2.v));
+
+            for (let v = minV; v <= maxV; v++) {
+                for (let u = minU; u <= maxU; u++) {
+                    let weights = computeBarycentric(u, v, p0, p1, p2);
+                    if (weights.alpha >= 0 && weights.beta >= 0 && weights.gamma >= 0) {
+                        let z = weights.alpha * p0.z + weights.beta * p1.z + weights.gamma * p2.z;
+                        setPixelColor(u, v, z, color);
+                    }
+                }
+            }
+        }
+
+        // =========================================================================
+        // EVENT HANDLERS
+        // =========================================================================
+        document.addEventListener("keydown", (event) => {
+            switch (event.code) {
+                case "KeyW":
+                    camera.z += 0.5;
+                    draw();
+                    break;
+                case "KeyS":
+                    camera.z -= 0.5;
+                    draw();
+                    break;
+                case "KeyA":
+                    camera.x -= 0.5;
+                    draw();
+                    break;
+                case "KeyD":
+                    camera.x += 0.5;
+                    draw();
+                    break;
+                case "KeyR":
+                    camera = { ...INITIAL_CAMERA };
+                    isNight = false;
+                    draw();
+                    break;
+                case "Digit1":
+                    renderLevel = 1;
+                    draw();
+                    break;
+                case "Digit2":
+                    renderLevel = 2;
+                    draw();
+                    break;
+                case "Digit3":
+                    renderLevel = 3;
+                    draw();
+                    break;
+                default:
+                    return;
+            }
+            event.preventDefault();
+        });
+
+        canvas.addEventListener("click", (e) => {
+            let clientU = (e.clientX / canvas.width) * cols;
+            let clientV = (e.clientY / canvas.height) * rows;
+
+            let sun = instances[instances.length - 1];
+            let sunCenter = projectVertex(sun.model.vertices[0], sun);
+            let sunEdge = projectVertex(sun.model.vertices[2], sun);
+
+            if (sunCenter && sunEdge) {
+                let radius = Math.hypot(sunCenter.u - sunEdge.u, sunCenter.v - sunEdge.v);
+                if (Math.hypot(clientU - sunCenter.u, clientV - sunCenter.v) < radius) {
+                    isNight = !isNight;
+                    draw();
+                }
+            }
+        });
+
+        draw();
+    </script>
+</body>
+
+</html>
