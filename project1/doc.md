@@ -1,8 +1,8 @@
 # Project 1: Pinhole camera, rasterized display
-**Course:** COMPUTER GRAPHICS I (001)
-**Author:** Thu Le
-**Repository:** https://github.com/banh-canh-cua/Thu-Le---CS5160-Computer-Graphics-diary.git
-**Live Demo:** https://banh-canh-cua.github.io/Thu-Le---CS5160-Computer-Graphics-diary/
+**Course:** COMPUTER GRAPHICS I (001)  
+**Author:** Thu Le  
+**Repository:** https://github.com/banh-canh-cua/Thu-Le---CS5160-Computer-Graphics-diary.git  
+**Live Demo:** https://banh-canh-cua.github.io/Thu-Le---CS5160-Computer-Graphics-diary/  
 **Demo Video:** https://youtu.be/bEoqOqwyg5E
 
 ## Design
@@ -13,9 +13,9 @@ The scene shows a landscape with multiple objects and layers:
 - Mountain ranges
 - Pine tree forest
 
-![Day mode](/src/day_design.jpg)
+![Day mode](src/day_design.jpg)
 *Day mode*
-![Night mode](/src/night_design.jpg)
+![Night mode](src/night_design.jpg)
 *Night mode*
 
 ## Features and Controls
@@ -32,12 +32,12 @@ We can explore the virtual world from a first-person perspective by moving the c
   - 2: pixelated line drawing
   - 3: pixelated colored objects
  
-![Day mode level 1](/src/day1.jpeg)
-![Day mode level 2](/src/day2.jpeg)
-![Day mode level 3](/src/day3.jpeg)
-![Night mode level 1](/src/night1.jpeg)
-![Night mode level 2](/src/night2.jpeg)
-![Night mode level 3](/src/night3.jpeg)
+![Day mode level 1](src/day1.jpeg)
+![Day mode level 2](src/day2.jpeg)
+![Day mode level 3](src/day3.jpeg)
+![Night mode level 1](src/night1.jpeg)
+![Night mode level 2](src/night2.jpeg)
+![Night mode level 3](src/night3.jpeg)
 
 ## Implementation
 
